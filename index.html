@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="เกมจำไพ่โป๊กเกอร์ เล่นกับเพื่อนออนไลน์ได้โดยไม่ต้องสมัคร">
+<title>Memory Hold'em</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+/* Layout: a card table — player seats on the left and right rails, felt in the middle holding the board and the 16-card memory grid. Single deliberate dark look. */
+:root{
+  --felt:#14463a; --felt-deep:#0c2f27; --rail:#2a1a12; --brass:#d8ad55;
+  --ivory:#f6f1e6; --ink:#1d1a17; --red:#b8322a; --muted:#a9c3b8;
+  --p0:#f0c24b; --p1:#7fd0e8;
+  --display:"Chakra Petch","IBM Plex Sans Thai",system-ui,sans-serif;
+  --body:"IBM Plex Sans Thai",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{min-height:100%}
+body{background:var(--rail);color:var(--ivory);font-family:var(--body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 32px}
+.app{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(24px,4vw,34px);margin:0;letter-spacing:.02em;color:var(--brass)}
+h1 small{display:block;font-family:var(--body);font-size:13px;font-weight:500;color:var(--muted);letter-spacing:0}
+.roundtag{font-family:var(--display);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+
+.table{display:grid;gap:14px;grid-template-columns:minmax(0,1fr) minmax(0,540px) minmax(0,1fr);grid-template-areas:"s0 felt s1";align-items:start}
+@media (max-width:860px){.table{grid-template-columns:1fr 1fr;grid-template-areas:"s0 s1" "felt felt"}}
+
+.seat{background:var(--felt-deep);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0;border:2px solid transparent;transition:border-color .25s,box-shadow .25s}
+#seat0{grid-area:s0;--pc:var(--p0)} #seat1{grid-area:s1;--pc:var(--p1)}
+.seat.active{border-color:var(--pc);box-shadow:0 0 0 4px color-mix(in srgb,var(--pc) 22%,transparent)}
+.seat .who{display:flex;align-items:center;gap:8px;min-width:0}
+.seat .dot{width:10px;height:10px;border-radius:50%;background:var(--pc);flex:none}
+.seat .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seat .score{font-family:var(--display);font-weight:700;font-size:40px;line-height:1;color:var(--pc);font-variant-numeric:tabular-nums}
+.seat .score span{font-size:13px;font-weight:500;color:var(--muted);margin-left:4px;font-family:var(--body)}
+.hole{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;max-width:220px}
+.hole.two{grid-template-columns:repeat(2,minmax(0,1fr));max-width:112px}
+.slot{aspect-ratio:5/7;border:1.5px dashed color-mix(in srgb,var(--pc) 45%,transparent);border-radius:6px}
+.hand{font-size:13px;color:var(--muted);min-height:2.6em}
+.hand b{display:block;color:var(--ivory);font-family:var(--display);font-size:16px;font-weight:700}
+.gain{font-family:var(--display);font-weight:700;color:var(--pc);font-size:15px}
+
+.felt{grid-area:felt;position:relative;background:radial-gradient(ellipse at 50% 30%,#1b5a4a 0%,var(--felt) 55%,var(--felt-deep) 100%);
+  border-radius:22px;border:6px solid #3d271b;box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--brass) 40%,transparent),0 10px 30px rgba(0,0,0,.45);
+  padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.status{text-align:center;min-height:3.2em;display:flex;flex-direction:column;justify-content:center}
+.status .main{font-family:var(--display);font-weight:700;font-size:19px;color:var(--sc,var(--ivory))}
+.status .sub{font-size:13px;color:var(--muted)}
+.timer{height:6px;border-radius:3px;background:rgba(0,0,0,.35);overflow:hidden}
+.timer .bar{height:100%;width:0;background:var(--brass);transition:width .1s linear}
+.timer.low .bar{background:var(--red)}
+.boardrow{display:flex;flex-direction:column;align-items:center;gap:6px}
+.label{font-family:var(--display);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--brass)}
+.community{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:min(100%,270px)}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(6px,1.6vw,12px)}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;min-height:44px}
+
+/* cards */
+.card{all:unset;display:block;aspect-ratio:5/7;perspective:700px;container-type:inline-size;position:relative;border-radius:8px}
+.card:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
+.inner{position:absolute;inset:0;transform-style:preserve-3d;transform:rotateY(180deg);transition:transform .45s cubic-bezier(.3,.7,.3,1),translate .2s}
+.card.up .inner{transform:rotateY(0)}
+.face{position:absolute;inset:0;border-radius:8px;backface-visibility:hidden;-webkit-backface-visibility:hidden;overflow:hidden}
+.front{background:var(--ivory);color:var(--ink);box-shadow:0 2px 4px rgba(0,0,0,.35)}
+.front.red{color:var(--red)}
+.front .idx{position:absolute;left:7%;top:4%;font-family:var(--display);font-weight:700;font-size:26cqw;line-height:.95;text-align:center}
+.front .idx i{display:block;font-style:normal;font-size:22cqw}
+.front .pip{position:absolute;inset:0;display:grid;place-items:center;font-size:52cqw;padding-top:16%}
+.back{transform:rotateY(180deg);background:
+  repeating-linear-gradient(45deg,transparent 0 6px,color-mix(in srgb,var(--brass) 30%,transparent) 6px 7px),
+  repeating-linear-gradient(-45deg,transparent 0 6px,color-mix(in srgb,var(--brass) 30%,transparent) 6px 7px),#6d1f22;
+  border:3px solid var(--ivory);box-shadow:0 2px 4px rgba(0,0,0,.35)}
+.tag{position:absolute;right:5%;bottom:4%;font-family:var(--display);font-size:16cqw;font-weight:700;padding:1px 5px;border-radius:4px;background:var(--oc);color:var(--ink);backface-visibility:hidden}
+.card[data-owner="0"]{--oc:var(--p0)} .card[data-owner="1"]{--oc:var(--p1)}
+.card[data-owner] .front{box-shadow:0 0 0 3px var(--oc),0 2px 6px rgba(0,0,0,.4)}
+.grid.pickable .card:not([data-owner]){cursor:pointer}
+.grid.pickable .card:not([data-owner]):hover .inner,.grid.pickable .card:not([data-owner]):focus-visible .inner{translate:0 -4px}
+.grid.pickable .card:not([data-owner]):hover .back{border-color:var(--sc)}
+.card.missed{opacity:.42}
+.card.win5 .inner{translate:0 -5px}
+.card.win5 .front{box-shadow:0 0 0 3px var(--brass),0 6px 14px rgba(0,0,0,.5)}
+
+button.btn{font:600 15px var(--body);border:0;border-radius:999px;padding:10px 22px;cursor:pointer;background:var(--brass);color:var(--ink)}
+button.btn.ghost{background:transparent;color:var(--ivory);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--ivory) 40%,transparent)}
+button.btn:focus-visible{outline:3px solid var(--ivory);outline-offset:2px}
+
+/* setup overlay */
+.overlay{position:absolute;inset:0;border-radius:16px;background:color-mix(in srgb,var(--felt-deep) 88%,transparent);backdrop-filter:blur(3px);display:grid;place-items:center;padding:16px;z-index:5;overflow:auto}
+.panel{width:min(100%,380px);display:flex;flex-direction:column;gap:14px}
+.panel h2{font-family:var(--display);margin:0;font-size:22px;color:var(--brass)}
+.panel p{margin:0;color:var(--muted);font-size:14px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field>span{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.seg{display:flex;background:rgba(0,0,0,.3);border-radius:999px;padding:3px;gap:3px}
+.seg label{flex:1;text-align:center;padding:7px 8px;border-radius:999px;cursor:pointer;font-size:14px}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--ivory);color:var(--ink);font-weight:600}
+.seg label:has(input:focus-visible){outline:2px solid var(--brass)}
+.names{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.names input{width:100%;font:inherit;padding:8px 10px;border-radius:8px;border:1.5px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:var(--ivory)}
+.names input:focus{outline:none;border-color:var(--brass)}
+
+.rules{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:20px;background:var(--felt-deep);border-radius:14px;padding:18px}
+@media (max-width:700px){.rules{grid-template-columns:1fr}}
+.rules h3{font-family:var(--display);margin:0 0 8px;color:var(--brass);font-size:16px;letter-spacing:.04em}
+.rules ol{margin:0;padding-left:20px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.rules ol b{color:var(--ivory);font-weight:600}
+table.rank{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+table.rank td{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)}
+table.rank td:last-child{text-align:right;font-family:var(--display);font-weight:700;color:var(--brass)}
+table.rank .th{color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.inner,.timer .bar{transition:none}}
+.seg.three label{font-size:13px;padding:7px 4px}
+.note{font-size:13px;color:var(--muted);background:rgba(0,0,0,.25);border-radius:8px;padding:8px 10px}
+.note.err{color:#ffb4a8}
+.row{display:flex;gap:8px}
+.row input{flex:1;min-width:0;font:600 18px var(--display);letter-spacing:.3em;text-transform:uppercase;padding:8px 10px;border-radius:8px;border:1.5px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:var(--ivory)}
+.row input:focus{outline:none;border-color:var(--brass)}
+.roomcode{font-family:var(--display);letter-spacing:.25em;color:var(--brass)}
+</style>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <h1>Memory Hold'em<small>จำไพ่ 16 ใบ แล้วเลือกให้ได้มือโป๊กเกอร์ที่ดีที่สุด</small></h1>
+    <div class="roundtag" id="roundtag">ยังไม่เริ่ม</div>
+  </header>
+
+  <main class="table">
+    <aside class="seat" id="seat0">
+      <div class="who"><span class="dot"></span><span class="name" id="name0">ผู้เล่น 1</span></div>
+      <div class="score" id="score0">0<span>แต้ม</span></div>
+      <div class="hole two" id="hole0"></div>
+      <div class="hand" id="hand0">ยังไม่มีไพ่</div>
+    </aside>
+
+    <section class="felt" id="felt">
+      <div class="status" id="status"><div class="main">ตั้งค่าเกมแล้วกดแจกไพ่</div><div class="sub">ไพ่ 16 ใบจะเปิดให้ดู 20 วินาที</div></div>
+      <div class="timer" id="timer"><div class="bar" id="bar"></div></div>
+      <div class="boardrow"><span class="label">กองกลาง</span><div class="community" id="community"></div></div>
+      <div class="grid" id="grid"></div>
+      <div class="actions" id="actions"></div>
+
+      <div class="overlay" id="setup">
+        <form class="panel" id="setupForm">
+          <h2>ตั้งโต๊ะ</h2>
+          <p>จำตำแหน่งไพ่ 16 ใบให้ได้ภายใน 20 วินาที เมื่อไพ่คว่ำแล้วจะเปิดไพ่กองกลาง 3 ใบ จากนั้นผลัดกันเลือกไพ่คว่ำมาเข้ามือ</p>
+          <div class="field"><span>คู่แข่ง</span>
+            <div class="seg three">
+              <label><input type="radio" name="mode" id="m-pvp" value="pvp" checked>เครื่องเดียวกัน</label>
+              <label><input type="radio" name="mode" id="m-online" value="online">ออนไลน์</label>
+              <label><input type="radio" name="mode" id="m-bot" value="bot">บอท</label>
+            </div></div>
+          <div class="field" id="diffField" hidden><span>ความจำของบอท</span>
+            <div class="seg">
+              <label><input type="radio" name="diff" id="d-e" value="0.35">ขี้ลืม</label>
+              <label><input type="radio" name="diff" id="d-n" value="0.6" checked>ปกติ</label>
+              <label><input type="radio" name="diff" id="d-h" value="0.9">ความจำดี</label>
+            </div></div>
+          <div class="field"><span>ไพ่ในมือ</span>
+            <div class="seg">
+              <label><input type="radio" name="hold" id="h-2" value="2" checked>2 ใบ (ครบ 5 พอดี)</label>
+              <label><input type="radio" name="hold" id="h-4" value="4">4 ใบ (ดีสุด 5 จาก 7)</label>
+            </div></div>
+          <div class="field"><span id="namesLabel">ชื่อผู้เล่น</span>
+            <div class="names" id="namesRow"><input id="n0" value="ผู้เล่น 1" maxlength="16" aria-label="ชื่อผู้เล่นฝั่งซ้าย"><input id="n1" value="ผู้เล่น 2" maxlength="16" aria-label="ชื่อผู้เล่นฝั่งขวา"></div></div>
+
+          <div class="field" id="onlineField" hidden><span>ห้องออนไลน์</span>
+            <div class="note" id="onlineNote">กำลังเชื่อมต่อ…</div>
+            <button class="btn" type="button" id="createBtn">สร้างห้องใหม่</button>
+            <div class="row"><input id="roomCode" maxlength="4" placeholder="รหัส" aria-label="รหัสห้อง 4 ตัว" autocomplete="off"><button class="btn ghost" type="button" id="joinBtn">เข้าห้อง</button></div>
+            <button class="btn ghost" type="button" id="resumeBtn" hidden></button>
+            <div class="note err" id="onlineErr" hidden></div>
+          </div>
+
+          <button class="btn" type="submit" id="startBtn">แจกไพ่</button>
+        </form>
+      </div>
+    </section>
+
+    <aside class="seat" id="seat1">
+      <div class="who"><span class="dot"></span><span class="name" id="name1">ผู้เล่น 2</span></div>
+      <div class="score" id="score1">0<span>แต้ม</span></div>
+      <div class="hole two" id="hole1"></div>
+      <div class="hand" id="hand1">ยังไม่มีไพ่</div>
+    </aside>
+  </main>
+
+  <section class="rules">
+    <div>
+      <h3>วิธีเล่น</h3>
+      <ol>
+        <li><b>จำ</b> ไพ่ 16 ใบเปิดหงาย 20 วินาที</li>
+        <li><b>คว่ำ</b> ไพ่ทั้งหมด แล้วเปิดไพ่กองกลาง 3 ใบ (ไม่ซ้ำกับ 16 ใบ)</li>
+        <li><b>เลือก</b> ผลัดกันหยิบไพ่คว่ำแบบงูเลื้อย (A, B, B, A…) ใบที่หยิบจะเปิดให้ทุกคนเห็น</li>
+        <li><b>นับแต้ม</b> มือรวมกองกลางได้แต้มตามตาราง คนชนะรอบได้โบนัส +3 (เสมอ +1 ทั้งคู่)</li>
+        <li><b>ออนไลน์</b> คนหนึ่งสร้างห้องแล้วส่งรหัส 4 ตัวให้เพื่อน เพื่อนเปิดหน้านี้จากเครื่องตัวเองแล้วกรอกรหัส</li>
+      </ol>
+    </div>
+    <div>
+      <h3>ลำดับมือและแต้ม</h3>
+      <table class="rank" id="rankTable"></table>
+    </div>
+  </section>
+</div>
+
+<script>
+const NAMES=["High Card","One Pair","Two Pair","Three of a Kind","Straight","Flush","Full House","Four of a Kind","Straight Flush","Royal Flush"];
+const THAI=["ไพ่สูง","หนึ่งคู่","สองคู่","ตอง","สเตรท","ฟลัช","ฟูลเฮาส์","โฟร์การ์ด","สเตรทฟลัช","รอยัลฟลัช"];
+const POINTS=[1,2,3,4,5,6,7,8,9,10];
+const SUITS=["♠","♥","♦","♣"];
+const MEMO_SECONDS=20, BONUS=3;
+const $=id=>document.getElementById(id);
+const rn=r=>({11:"J",12:"Q",13:"K",14:"A"})[r]||String(r);
+
+function deck(){const d=[];for(let s=0;s<4;s++)for(let r=2;r<=14;r++)d.push({r,s,id:r+"-"+s});return d}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
+const idCard=id=>{const[r,s]=id.split("-").map(Number);return{r,s,id}};
+
+/* ---------- hand evaluation ---------- */
+function evalN(cs){
+  const cnt={};cs.forEach(c=>cnt[c.r]=(cnt[c.r]||0)+1);
+  const g=Object.entries(cnt).map(([r,n])=>[+r,n]).sort((a,b)=>b[1]-a[1]||b[0]-a[0]);
+  const ranks=g.map(x=>x[0]);
+  if(cs.length===5){
+    const flush=cs.every(c=>c.s===cs[0].s);
+    let st=0;
+    if(g.length===5){if(ranks[0]-ranks[4]===4)st=ranks[0];else if(ranks[0]===14&&ranks[1]===5)st=5}
+    if(flush&&st)return[8,st];
+    if(g[0][1]===4)return[7,...ranks];
+    if(g[0][1]===3&&g[1][1]===2)return[6,...ranks];
+    if(flush)return[5,...ranks];
+    if(st)return[4,st];
+  }
+  const a=g[0][1],b=g[1]?g[1][1]:0;
+  if(a===4)return[7,...ranks];
+  if(a===3)return[3,...ranks];
+  if(a===2&&b===2)return[2,...ranks];
+  if(a===2)return[1,...ranks];
+  return[0,...ranks];
+}
+function cmp(a,b){for(let i=0;i<Math.max(a.length,b.length);i++){const d=(a[i]||0)-(b[i]||0);if(d)return d}return 0}
+function best(cs){
+  if(cs.length<=5)return{score:evalN(cs),cards:cs};
+  let top=null;const n=cs.length;
+  for(let a=0;a<n;a++)for(let b=a+1;b<n;b++)for(let c=b+1;c<n;c++)for(let d=c+1;d<n;d++)for(let e=d+1;e<n;e++){
+    const h=[cs[a],cs[b],cs[c],cs[d],cs[e]],s=evalN(h);
+    if(!top||cmp(s,top.score)>0)top={score:s,cards:h};
+  }
+  return top;
+}
+const catOf=s=>s[0]===8&&s[1]===14?9:s[0];
+const handLabel=s=>{const c=catOf(s);return{en:NAMES[c],th:THAI[c],pts:POINTS[c]}};
+
+/* ---------- state ----------
+   G is the game record. Locally it is a plain object; online it mirrors the shared
+   document games/<code>, and every change goes through commit()/replace(). */
+let G=null, MODE="pvp", BOTMEM=.6;
+const V={round:0,phase:"idle",shown:new Set(),mem:new Set(),botTimer:null,pending:false,seq:0,res:null,skip:false};
+const NET={peer:null,conn:null,code:null,seat:0};
+
+function snake(start,n){const o=[];const a=start,b=1-start;for(let i=0;i<n;i++)o.push(...(i%2===0?[a,b]:[b,a]));return o}
+const orderOf=()=>snake((G.round-1)%2,G.hold);
+function names(){
+  const def1=MODE==="bot"?"บอท":MODE==="online"?"รอเพื่อน…":"ผู้เล่น 2";
+  return G?[G.name0||"ผู้เล่น 1",G.name1||def1]:["ผู้เล่น 1","ผู้เล่น 2"];
+}
+function handsOf(){
+  const h=[[],[]];if(!G||!G.round)return h;
+  const ord=orderOf();
+  Object.entries(G.picked||{}).sort((x,y)=>x[1]-y[1]).forEach(([i,t])=>h[ord[t]].push(idCard(G.board[i])));
+  return h;
+}
+function isMyTurn(){
+  const p=orderOf()[G.turn];
+  if(MODE==="online")return p===NET.seat;
+  if(MODE==="bot")return p===0;
+  return true;
+}
+function totals(){
+  const t=[0,0];if(!G)return t;
+  for(const[k,g]of Object.entries(G.results||{}))if(+k!==G.round){t[0]+=g[0];t[1]+=g[1]}
+  if(V.res&&V.round===G.round){t[0]+=V.res.gains[0];t[1]+=V.res.gains[1]}
+  return t;
+}
+/* ---------- card DOM ---------- */
+function cardEl(c,{button=false}={}){
+  const el=document.createElement(button?"button":"div");
+  el.className="card";if(button)el.type="button";
+  const red=c.s===1||c.s===2;
+  el.innerHTML=`<div class="inner"><div class="face front${red?" red":""}"><span class="idx">${rn(c.r)}<i>${SUITS[c.s]}</i></span><span class="pip">${SUITS[c.s]}</span></div><div class="face back"></div></div>`;
+  el.dataset.id=c.id;
+  return el;
+}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const stag=ms=>reduce?0:ms;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+
+function setStatus(main,sub="",color=""){
+  $("status").innerHTML=`<div class="main">${main}</div><div class="sub">${sub}</div>`;
+  $("felt").style.setProperty("--sc",color||"var(--ivory)");
+}
+function setActions(list){
+  const a=$("actions");a.innerHTML="";
+  list.forEach(([label,fn,ghost])=>{const b=document.createElement("button");b.className="btn"+(ghost?" ghost":"");b.type="button";b.textContent=label;b.onclick=fn;a.appendChild(b)});
+}
+const pc=p=>p===0?"var(--p0)":"var(--p1)";
+function setRoundTag(){
+  const parts=[];
+  if(MODE==="online"&&NET.code)parts.push("ห้อง "+NET.code);
+  if(G&&G.round)parts.push("รอบที่ "+G.round);
+  $("roundtag").textContent=parts.join(" · ")||"ยังไม่เริ่ม";
+}
+
+function renderSeats(){
+  const nm=names(),hold=G?G.hold:2,tot=totals(),hs=handsOf();
+  const showComm=G&&G.round&&(V.phase==="pick"||V.phase==="result");
+  const comm=showComm?G.community.map(idCard):[];
+  const ord=G&&G.round?orderOf():[];
+  for(const p of[0,1]){
+    $("name"+p).textContent=nm[p]+(MODE==="online"&&p===NET.seat?" (คุณ)":"");
+    $("score"+p).innerHTML=`${tot[p]}<span>แต้ม</span>`;
+    const hole=$("hole"+p);hole.className="hole"+(hold===2?" two":"");hole.innerHTML="";
+    for(let i=0;i<hold;i++){
+      const c=hs[p][i];
+      if(c){const el=cardEl(c);el.classList.add("up");el.dataset.owner=p;
+        if(V.res&&V.res.winners.includes(p)&&V.res.winIds.has(c.id))el.classList.add("win5");
+        hole.appendChild(el)}
+      else{const d=document.createElement("div");d.className="slot";hole.appendChild(d)}
+    }
+    const h=$("hand"+p);
+    if(V.res){const l=V.res.lab[p],g=V.res.gains[p];
+      h.innerHTML=`<b>${l.en}</b>${l.th}<div class="gain">+${g} แต้ม${V.res.winners.length===1&&V.res.winners[0]===p?" (รวมโบนัสชนะ)":""}</div>`}
+    else if(showComm&&hs[p].length){const l=handLabel(best([...comm,...hs[p]]).score);h.innerHTML=`<b>${l.en}</b>${l.th} · ${l.pts} แต้ม`}
+    else h.textContent="ยังไม่มีไพ่";
+    $("seat"+p).classList.toggle("active",V.phase==="pick"&&G.turn<ord.length&&ord[G.turn]===p);
+  }
+  setRoundTag();
+}
+
+function emptyTable(){
+  const g=$("grid");g.innerHTML="";g.className="grid";
+  const d=shuffle(deck());
+  for(let i=0;i<16;i++)g.appendChild(cardEl(d[i]));
+  const cm=$("community");cm.innerHTML="";
+  for(let i=0;i<3;i++)cm.appendChild(cardEl(d[16+i]));
+}
+
+/* ---------- flow ---------- */
+function onState(){
+  if(!G)return;
+  if(MODE==="online"&&!G.round){V.phase="idle";renderSeats();lobbyView();return}
+  if(G.round!==V.round){playRound();return}
+  renderSeats();
+  if(V.phase==="pick"||V.phase==="result")sync();
+}
+
+function freshRound(){const d=shuffle(deck());return{round:G.round+1,board:d.slice(0,16).map(c=>c.id),community:d.slice(16,19).map(c=>c.id),picked:{},turn:0}}
+function nextRound(){
+  if(MODE==="online"&&NET.seat!==0)return;
+  setActions([]);
+  Object.assign(G,freshRound());onState();hostBroadcast();
+}
+
+async function playRound(){
+  const my=++V.seq;const alive=()=>my===V.seq;
+  clearTimeout(V.botTimer);V.botTimer=null;
+  V.round=G.round;V.phase="memorize";V.shown=new Set();V.pending=false;V.res=null;V.skip=false;
+  setActions([]);
+  const board=G.board.map(idCard),comm=G.community.map(idCard);
+  V.mem=new Set();if(MODE==="bot")board.forEach((_,i)=>{if(Math.random()<BOTMEM)V.mem.add(i)});
+  renderSeats();
+
+  const g=$("grid");g.className="grid";g.innerHTML="";
+  board.forEach((c,i)=>{const el=cardEl(c,{button:true});el.dataset.i=i;el.setAttribute("aria-label","ไพ่ช่อง "+(i+1));el.onclick=()=>humanPick(i);g.appendChild(el)});
+  const cm=$("community");cm.innerHTML="";
+  comm.forEach(c=>cm.appendChild(cardEl(c)));
+
+  const resume=Object.keys(G.picked||{}).length>0;
+  if(!resume){
+    const first=names()[orderOf()[0]];
+    setStatus("เตรียมจำ…","ไพ่กำลังเปิด");
+    await wait(250);if(!alive())return;
+    [...g.children].forEach((el,i)=>setTimeout(()=>alive()&&el.classList.add("up"),stag(i*40)));
+    await wait(stag(16*40)+450);if(!alive())return;
+
+    const t0=performance.now(),total=MEMO_SECONDS*1000;
+    if(MODE!=="online")setActions([["จำได้แล้ว เริ่มเลย",()=>{V.skip=true},true]]);
+    await new Promise(res=>{
+      const tick=()=>{
+        if(!alive()){res();return}
+        const rem=Math.max(0,total-(performance.now()-t0));
+        if(V.skip||rem<=0){res();return}
+        $("bar").style.width=(rem/total*100)+"%";
+        $("timer").classList.toggle("low",rem<5000);
+        setStatus(`จำไพ่! เหลือ ${Math.ceil(rem/1000)} วินาที`,`${esc(first)} ได้เลือกก่อนในรอบนี้`);
+        setTimeout(tick,100);
+      };tick();
+    });
+    if(!alive())return;
+    $("bar").style.width="0%";$("timer").classList.remove("low");setActions([]);
+
+    V.phase="reveal";setStatus("คว่ำไพ่","เปิดไพ่กองกลาง 3 ใบ");
+    [...g.children].forEach((el,i)=>setTimeout(()=>alive()&&el.classList.remove("up"),stag(i*25)));
+    await wait(stag(16*25)+600);if(!alive())return;
+  }
+  for(let i=0;i<3;i++){cm.children[i].classList.add("up");await wait(stag(380));if(!alive())return}
+  V.phase="pick";
+  sync();
+}
+
+function revealPick(i,p){
+  const el=$("grid").children[i];if(!el)return;
+  el.dataset.owner=p;el.classList.add("up");
+  const tag=document.createElement("span");tag.className="tag";tag.textContent=p===0?"1":"2";el.querySelector(".front").appendChild(tag);
+  const c=idCard(G.board[i]);
+  el.setAttribute("aria-label",`${rn(c.r)}${SUITS[c.s]} ของ ${names()[p]}`);
+}
+
+function sync(){
+  const ord=orderOf();
+  for(const[i,t]of Object.entries(G.picked||{}))if(!V.shown.has(+i)){V.shown.add(+i);revealPick(+i,ord[t])}
+  V.pending=false;
+  if(G.turn>=ord.length){if(V.phase!=="result")finish();else renderSeats();return}
+  V.phase="pick";
+  renderSeats();
+  const p=ord[G.turn],nm=names(),nth=handsOf()[p].length+1;
+  const bot=MODE==="bot"&&p===1,mine=isMyTurn();
+  $("grid").classList.toggle("pickable",mine);
+  const sub=`เลือกไพ่คว่ำใบที่ ${nth} จาก ${G.hold}`;
+  if(bot)setStatus(`${esc(nm[1])} กำลังนึก…`,sub,pc(p));
+  else if(MODE==="online")setStatus(mine?"ตาของคุณ":`รอ ${esc(nm[p])} เลือก…`,sub,pc(p));
+  else setStatus(`ตาของ ${esc(nm[p])}`,sub,pc(p));
+  setActions(MODE==="online"?[["ออกจากห้อง",openSetup,true]]:[]);
+  if(bot&&!V.botTimer)V.botTimer=setTimeout(()=>{V.botTimer=null;botPick()},stag(900)+150);
+}
+
+function humanPick(i){
+  if(V.phase!=="pick"||V.pending||!G||!isMyTurn())return;
+  if(G.picked&&G.picked[i]!=null)return;
+  V.pending=true;
+  commit({picked:{[i]:G.turn},turn:G.turn+1});
+}
+
+/* bot: picks the remembered card that builds the strongest hand, or gambles on an unremembered slot when that's worth more on average */
+function value(comm,hole,left){
+  const all=[...comm,...hole];
+  const b=best(all).score;const made=catOf(b)*20+(b[1]||0);
+  if(left<=0)return made;
+  let draw=made+5*left;
+  const suits=[0,0,0,0];all.forEach(c=>suits[c.s]++);
+  const need=5-Math.max(...suits);
+  if(need<=left)draw=Math.max(draw,(5*20+12)*Math.pow(.3,need)+made*.5);
+  const rs=new Set(all.map(c=>c.r));if(rs.has(14))rs.add(1);
+  for(let lo=1;lo<=10;lo++){let h=0;for(let r=lo;r<lo+5;r++)if(rs.has(r))h++;const n=5-h;if(n<=left)draw=Math.max(draw,(4*20+lo+4)*Math.pow(.28,n)+made*.5)}
+  return Math.max(made,draw);
+}
+function botPick(){
+  if(V.phase!=="pick"||MODE!=="bot")return;
+  const ord=orderOf();if(ord[G.turn]!==1)return;
+  const comm=G.community.map(idCard),hs=handsOf(),hole=hs[1],left=G.hold-hole.length-1;
+  const avail=G.board.map((_,i)=>i).filter(i=>G.picked[i]==null);
+  const known=avail.filter(i=>V.mem.has(i)),unknown=avail.filter(i=>!V.mem.has(i));
+  let bi=-1,bv=-Infinity;
+  for(const i of known){const v=value(comm,[...hole,idCard(G.board[i])],left)+Math.random()*.5;if(v>bv){bv=v;bi=i}}
+  if(unknown.length){
+    const seen=new Set([...G.community,...hs[0].map(c=>c.id),...hole.map(c=>c.id),...known.map(i=>G.board[i])]);
+    const pool=deck().filter(c=>!seen.has(c.id));
+    const avg=pool.reduce((s,c)=>s+value(comm,[...hole,c],left),0)/pool.length;
+    if(avg>bv||bi<0)bi=unknown[Math.random()*unknown.length|0];
+  }
+  commit({picked:{[bi]:G.turn},turn:G.turn+1});
+}
+
+function finish(){
+  V.phase="result";$("grid").classList.remove("pickable");
+  const comm=G.community.map(idCard),hs=handsOf();
+  const r=[0,1].map(p=>best([...comm,...hs[p]]));
+  const lab=r.map(x=>handLabel(x.score));
+  const c=cmp(r[0].score,r[1].score);
+  const gains=[lab[0].pts,lab[1].pts];let winners;
+  if(c>0){gains[0]+=BONUS;winners=[0]}else if(c<0){gains[1]+=BONUS;winners=[1]}else{gains[0]++;gains[1]++;winners=[0,1]}
+  const winIds=new Set();winners.forEach(p=>r[p].cards.forEach(x=>winIds.add(x.id)));
+  V.res={lab,gains,winners,winIds};
+
+  if(!(G.results||{})[G.round]){
+    if(MODE!=="online"||NET.seat===0){G.results={...(G.results||{}),[G.round]:gains};hostBroadcast()}
+  }
+
+  [...$("grid").children].forEach((el,i)=>{if(G.picked[i]==null)el.classList.add("up","missed")});
+  document.querySelectorAll("#community .card,#grid .card[data-owner]").forEach(el=>{
+    const o=el.dataset.owner;
+    if((o==null||winners.includes(+o))&&winIds.has(el.dataset.id))el.classList.add("win5");
+  });
+  renderSeats();
+
+  const nm=names();
+  const main=winners.length===2?`เสมอ! ${lab[0].en} ทั้งคู่`:`${esc(nm[winners[0]])} ชนะรอบนี้`;
+  let sub=winners.length===2?"ได้คนละ +1 โบนัส":`${lab[winners[0]].en} ชนะ ${lab[1-winners[0]].en} · ไพ่จาง ๆ คือใบที่ไม่มีใครหยิบ`;
+  if(MODE==="online"){
+    if(NET.seat!==0)sub+=" · รอเจ้าของห้องเริ่มรอบถัดไป";
+    setActions(NET.seat===0?[["รอบถัดไป",nextRound],["ออกจากห้อง",openSetup,true]]:[["ออกจากห้อง",openSetup,true]]);
+  }else setActions([["รอบถัดไป",nextRound],["ตั้งค่าใหม่",openSetup,true]]);
+  setStatus(main,sub,winners.length===2?"var(--brass)":pc(winners[0]));
+}
+
+/* ---------- online rooms ----------
+   PeerJS links the two browsers directly. The host's browser holds the game record G
+   and sends it to the guest after every change; the guest sends its picks to the host. */
+const CODE_CHARS="ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const PREFIX="memory-holdem-v1-";
+const genCode=()=>Array.from({length:4},()=>CODE_CHARS[Math.random()*CODE_CHARS.length|0]).join("");
+const store={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch{}}};
+const inviteLink=()=>location.origin+location.pathname+"#"+NET.code;
+
+function hostBroadcast(){
+  if(MODE!=="online"||NET.seat!==0||!G)return;
+  if(NET.conn&&NET.conn.open)NET.conn.send({type:"state",G});
+  store.set("mh-last",JSON.stringify({code:NET.code,seat:0,G}));
+}
+function applyPatch(patch){
+  for(const[k,v]of Object.entries(patch))G[k]=(v&&typeof v==="object"&&!Array.isArray(v))?{...(G[k]||{}),...v}:v;
+}
+async function commit(patch){
+  if(MODE==="online"){
+    if(NET.seat===0){applyPatch(patch);onState();hostBroadcast()}
+    else if(NET.conn&&NET.conn.open)NET.conn.send({type:"patch",patch});
+    else{V.pending=false;setStatus("หลุดการเชื่อมต่อกับเจ้าของห้อง","กด ออกจากห้อง แล้วเข้าห้องใหม่ด้วยรหัสเดิม","var(--red)")}
+    return;
+  }
+  applyPatch(patch);onState();
+}
+
+function copyInvite(){
+  const link=inviteLink();
+  const done=()=>setStatus("คัดลอกลิงก์แล้ว",`ส่งให้เพื่อนได้เลย · <span class="roomcode">${NET.code}</span>`);
+  const fallback=()=>setStatus("คัดลอกลิงก์นี้ส่งให้เพื่อน",`<span style="user-select:all;word-break:break-all">${esc(link)}</span>`);
+  try{navigator.clipboard.writeText(link).then(done,fallback)}catch{fallback()}
+}
+
+function lobbyView(){
+  const nm=names();
+  if(NET.seat===0){
+    if(G.guest){
+      setStatus(`${esc(nm[1])} เข้าห้องแล้ว`,`รหัสห้อง <span class="roomcode">${NET.code}</span> · กดเริ่มเมื่อพร้อม`,"var(--p1)");
+      setActions([["เริ่มเกม",nextRound],["ออกจากห้อง",openSetup,true]]);
+    }else{
+      setStatus(`รหัสห้อง <span class="roomcode">${NET.code}</span>`,"ส่งลิงก์เชิญให้เพื่อน แล้วเปิดหน้านี้ค้างไว้ระหว่างรอ");
+      setActions([["คัดลอกลิงก์เชิญ",copyInvite],["ออกจากห้อง",openSetup,true]]);
+    }
+  }else{
+    setStatus("เข้าห้องแล้ว",`รอ ${esc(nm[0])} เริ่มเกม`,"var(--p0)");
+    setActions([["ออกจากห้อง",openSetup,true]]);
+  }
+}
+
+function showErr(msg){const e=$("onlineErr");e.textContent=msg;e.hidden=!msg}
+function myName(){return $("n0").value.trim()||"ผู้เล่น"}
+function setBusy(b){$("createBtn").disabled=$("joinBtn").disabled=$("resumeBtn").disabled=b}
+
+function enterRoom(code,seat){
+  MODE="online";NET.code=code;NET.seat=seat;
+  V.seq++;V.round=0;V.phase="idle";V.res=null;
+  if(seat===1)store.set("mh-last",JSON.stringify({code,seat:1}));
+  try{history.replaceState(null,"",location.pathname+location.search)}catch{}
+  $("setup").hidden=true;
+  emptyTable();renderSeats();
+}
+function leaveRoom(){
+  if(NET.peer){try{NET.peer.destroy()}catch{}}
+  NET.peer=null;NET.conn=null;
+}
+
+function hostData(d){
+  if(!d||typeof d!=="object")return;
+  if(d.type==="hello"){
+    G.guest=true;G.name1=String(d.name||"เพื่อน").slice(0,16);
+    onState();hostBroadcast();return;
+  }
+  if(d.type==="patch"&&G.round){
+    const p=d.patch||{},keys=Object.keys(p.picked||{}),ord=orderOf(),i=+keys[0];
+    const valid=ord[G.turn]===1&&keys.length===1&&Number.isInteger(i)&&i>=0&&i<16&&G.picked[i]==null&&p.picked[keys[0]]===G.turn&&p.turn===G.turn+1;
+    if(valid){applyPatch({picked:{[i]:G.turn},turn:G.turn+1});onState()}
+    hostBroadcast();
+  }
+}
+
+function createRoom(resume){
+  if(typeof Peer!=="function")return;
+  leaveRoom();showErr("");setBusy(true);
+  const code=resume?resume.code:genCode();
+  const peer=new Peer(PREFIX+code);
+  let opened=false;
+  peer.on("open",()=>{
+    opened=true;setBusy(false);NET.peer=peer;
+    const hold=+document.querySelector('input[name="hold"]:checked').value;
+    G=resume&&resume.G?{...resume.G,guest:false}:{name0:myName(),name1:"",guest:false,hold,round:0,board:[],community:[],picked:{},turn:0,results:{}};
+    enterRoom(code,0);
+    hostBroadcast();onState();
+  });
+  peer.on("connection",conn=>{
+    conn.on("open",()=>{
+      if(NET.conn&&NET.conn!==conn){try{NET.conn.close()}catch{}}
+      NET.conn=conn;
+      conn.on("data",hostData);
+      conn.on("close",()=>{
+        if(NET.conn!==conn)return;
+        NET.conn=null;
+        if(G&&!G.round){G.guest=false;G.name1="";onState()}
+        else setStatus(`${esc(names()[1])} หลุดการเชื่อมต่อ`,"รอให้เพื่อนเปิดลิงก์เดิมแล้วกด เข้าห้อง อีกครั้ง","var(--red)");
+      });
+      hostBroadcast();
+    });
+  });
+  peer.on("disconnected",()=>{if(NET.peer===peer)try{peer.reconnect()}catch{}});
+  peer.on("error",e=>{
+    if(opened)return;
+    setBusy(false);try{peer.destroy()}catch{}
+    if(e.type==="unavailable-id")showErr(resume?"ห้อง "+code+" ยังเปิดอยู่ที่อื่น รอสักครู่แล้วลองใหม่":"รหัสซ้ำ ลองกดสร้างห้องอีกครั้ง");
+    else showErr("เชื่อมต่อไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+  });
+}
+
+function joinRoom(code){
+  code=(code||"").trim().toUpperCase();
+  if(!/^[A-Z0-9]{4}$/.test(code)){showErr("ใส่รหัสห้อง 4 ตัว");return}
+  if(typeof Peer!=="function")return;
+  leaveRoom();showErr("");setBusy(true);
+  const peer=new Peer();
+  let joined=false;
+  const fail=msg=>{if(joined)return;clearTimeout(t);setBusy(false);showErr(msg);try{peer.destroy()}catch{}};
+  const t=setTimeout(()=>fail("ไม่พบห้อง "+code+" (เจ้าของห้องต้องเปิดหน้าเกมค้างไว้)"),12000);
+  peer.on("open",()=>{
+    const conn=peer.connect(PREFIX+code,{reliable:true});
+    conn.on("open",()=>{
+      joined=true;clearTimeout(t);setBusy(false);
+      NET.peer=peer;NET.conn=conn;
+      enterRoom(code,1);
+      setStatus("กำลังเข้าห้อง "+code+"…");setActions([["ออกจากห้อง",openSetup,true]]);
+      conn.send({type:"hello",name:myName()});
+    });
+    conn.on("data",d=>{if(d&&d.type==="state"&&NET.conn===conn){G=d.G;onState()}});
+    conn.on("close",()=>{if(NET.conn===conn){NET.conn=null;setStatus("หลุดจากห้อง","เจ้าของห้องปิดหน้าเกมหรือเน็ตหลุด กด ออกจากห้อง แล้วเข้าใหม่ด้วยรหัสเดิม","var(--red)")}});
+  });
+  peer.on("error",e=>{
+    if(e.type==="peer-unavailable")fail("ไม่พบห้อง "+code+" (เจ้าของห้องต้องเปิดหน้าเกมค้างไว้)");
+    else if(!joined)fail("เชื่อมต่อไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
+  });
+}
+
+function lastRoom(){try{return JSON.parse(store.get("mh-last")||"null")}catch{return null}}
+function updateOnlineUI(){
+  const online=$("m-online").checked;
+  $("onlineField").hidden=!online;$("startBtn").hidden=online;
+  $("n1").hidden=online;$("namesRow").style.gridTemplateColumns=online?"1fr":"";
+  $("namesLabel").textContent=online?"ชื่อของคุณ":"ชื่อผู้เล่น";
+  const ok=typeof Peer==="function";
+  $("onlineNote").textContent=ok?"สร้างห้องแล้วส่งลิงก์ให้เพื่อน หรือกรอกรหัสที่เพื่อนส่งมา ไม่ต้องมีบัญชี · เจ้าของห้องต้องเปิดหน้านี้ค้างไว้ระหว่างเล่น":"โหลดระบบออนไลน์ไม่สำเร็จ ลองรีเฟรชหน้านี้";
+  $("createBtn").disabled=$("joinBtn").disabled=!ok;
+  const last=lastRoom(),rb=$("resumeBtn");
+  rb.hidden=!(ok&&last&&last.code);
+  if(last&&last.code)rb.textContent=last.seat===0?"เปิดห้อง "+last.code+" ต่อ (คุณเป็นเจ้าของห้อง)":"กลับเข้าห้อง "+last.code;
+}
+
+/* ---------- setup ---------- */
+function openSetup(){
+  leaveRoom();V.seq++;clearTimeout(V.botTimer);V.botTimer=null;V.phase="idle";V.res=null;
+  $("timer").classList.remove("low");$("bar").style.width="0%";
+  $("setup").hidden=false;updateOnlineUI();$("n0").focus();
+}
+document.querySelectorAll('input[name="mode"]').forEach(r=>r.onchange=()=>{
+  const bot=$("m-bot").checked;$("diffField").hidden=!bot;
+  if(bot&&($("n1").value==="ผู้เล่น 2"||!$("n1").value))$("n1").value="บอท";
+  if(!bot&&$("n1").value==="บอท")$("n1").value="ผู้เล่น 2";
+  updateOnlineUI();
+});
+$("createBtn").onclick=()=>createRoom(null);
+$("joinBtn").onclick=()=>joinRoom($("roomCode").value);
+$("roomCode").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();joinRoom($("roomCode").value)}});
+$("resumeBtn").onclick=()=>{const l=lastRoom();if(!l)return;l.seat===0?createRoom(l):joinRoom(l.code)};
+$("setupForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  if($("m-online").checked)return;
+  leaveRoom();
+  MODE=document.querySelector('input[name="mode"]:checked').value;
+  BOTMEM=+document.querySelector('input[name="diff"]:checked').value;
+  const hold=+document.querySelector('input[name="hold"]:checked').value;
+  G={name0:$("n0").value.trim()||"ผู้เล่น 1",name1:$("n1").value.trim()||(MODE==="bot"?"บอท":"ผู้เล่น 2"),hold,round:0,board:[],community:[],picked:{},turn:0,results:{}};
+  V.round=0;V.res=null;
+  $("setup").hidden=true;
+  nextRound();
+});
+
+/* ranking table */
+$("rankTable").innerHTML=NAMES.map((n,i)=>[n,THAI[i],POINTS[i]]).reverse().map(([n,t,p])=>`<tr><td>${n}</td><td class="th">${t}</td><td>${p}</td></tr>`).join("");
+
+emptyTable();renderSeats();
+
+/* an invite link (#CODE) opens straight into the online join form */
+(function(){
+  const m=/^#([A-Za-z0-9]{4})$/.exec(location.hash);
+  if(m){$("m-online").checked=true;$("roomCode").value=m[1].toUpperCase();$("n0").value="";$("n0").placeholder="ใส่ชื่อของคุณ"}
+  updateOnlineUI();
+})();
+</script>
+</body>
+</html>
