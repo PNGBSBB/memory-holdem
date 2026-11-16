@@ -268,7 +268,7 @@ const handLabel=s=>{const c=catOf(s);return{en:NAMES[c],th:THAI[c],pts:POINTS[c]
    document games/<code>, and every change goes through commit()/replace(). */
 let G=null, MODE="pvp", BOTMEM=.6;
 const V={round:0,phase:"idle",shown:new Set(),mem:new Set(),botTimer:null,pending:false,seq:0,res:null,skip:false};
-const NET={peer:null,conn:null,code:null,seat:0};
+const NET={peer:null,conn:null,relay:null,code:null,seat:0};
 
 function snake(start,n){const o=[];const a=start,b=1-start;for(let i=0;i<n;i++)o.push(...(i%2===0?[a,b]:[b,a]));return o}
 const orderOf=()=>snake((G.round-1)%2,G.hold);
@@ -557,7 +557,7 @@ function lobbyView(){
       setStatus(`${esc(nm[1])} เข้าห้องแล้ว`,`รหัสห้อง <span class="roomcode">${NET.code}</span> · กดเริ่มเมื่อพร้อม`,"var(--p1)");
       setActions([["เริ่มเกม",nextRound],["ออกจากห้อง",openSetup,true]]);
     }else{
-      setStatus(`รหัสห้อง <span class="roomcode">${NET.code}</span>`,"ส่งลิงก์เชิญให้เพื่อน แล้วเปิดหน้านี้ค้างไว้ระหว่างรอ");
+      setStatus(`รหัสห้อง <span class="roomcode">${NET.code}</span>`,"ส่งลิงก์เชิญให้เพื่อน แล้วกลับมาเปิดหน้านี้ค้างไว้ระหว่างรอ");
       setActions([["คัดลอกลิงก์เชิญ",copyInvite],["ออกจากห้อง",openSetup,true]]);
     }
   }else{
@@ -580,12 +580,33 @@ function enterRoom(code,seat){
 }
 function leaveRoom(){
   if(NET.peer){try{NET.peer.destroy()}catch{}}
-  NET.peer=null;NET.conn=null;
+  if(NET.relay){try{NET.relay.close()}catch{}}
+  NET.peer=null;NET.conn=null;NET.relay=null;NET.resume=null;
 }
 
-function hostData(d){
+/* Relay fallback: when phones can't connect directly (common on 4G), messages go
+   through ntfy.sh, a free public pub/sub service. Same interface as a PeerJS connection. */
+const RELAY_BASE=window.RELAY_BASE||"https://ntfy.sh";
+function relayConn(code,me){
+  const topic="memory-holdem-v1-"+code.toLowerCase();
+  const ls={data:[],open:[]};
+  const conn={open:false,relay:true,
+    on(ev,fn){(ls[ev]||(ls[ev]=[])).push(fn)},
+    send(obj){fetch(RELAY_BASE+"/"+topic,{method:"POST",body:JSON.stringify({f:me,d:obj})}).catch(()=>{})},
+    close(){conn.open=false;try{es.close()}catch{}}};
+  const es=new EventSource(RELAY_BASE+"/"+topic+"/sse");
+  es.onopen=()=>{if(!conn.open){conn.open=true;ls.open.forEach(f=>f())}};
+  es.onmessage=e=>{
+    try{const m=JSON.parse(e.data);if(m.event&&m.event!=="message")return;
+      const p=JSON.parse(m.message);if(!p||p.f===me)return;ls.data.forEach(f=>f(p.d))}catch{}
+  };
+  return conn;
+}
+
+function hostData(d,via){
   if(!d||typeof d!=="object")return;
   if(d.type==="hello"){
+    if(via)NET.conn=via;
     G.guest=true;G.name1=String(d.name||"เพื่อน").slice(0,16);
     onState();hostBroadcast();return;
   }
@@ -597,67 +618,91 @@ function hostData(d){
   }
 }
 
-function createRoom(resume){
-  if(typeof Peer!=="function")return;
-  leaveRoom();showErr("");setBusy(true);
-  const code=resume?resume.code:genCode();
+function hostPeer(code,onFirstOpen,onFail){
   const peer=new Peer(PREFIX+code);
   let opened=false;
-  peer.on("open",()=>{
-    opened=true;setBusy(false);NET.peer=peer;
-    const hold=+document.querySelector('input[name="hold"]:checked').value;
-    G=resume&&resume.G?{...resume.G,guest:false}:{name0:myName(),name1:"",guest:false,hold,round:0,board:[],community:[],picked:{},turn:0,results:{}};
-    enterRoom(code,0);
-    hostBroadcast();onState();
-  });
+  peer.on("open",()=>{opened=true;NET.peer=peer;onFirstOpen&&onFirstOpen()});
   peer.on("connection",conn=>{
     conn.on("open",()=>{
-      if(NET.conn&&NET.conn!==conn){try{NET.conn.close()}catch{}}
+      if(NET.conn&&NET.conn!==conn&&!NET.conn.relay){try{NET.conn.close()}catch{}}
       NET.conn=conn;
-      conn.on("data",hostData);
+      conn.on("data",d=>hostData(d,conn));
       conn.on("close",()=>{
         if(NET.conn!==conn)return;
         NET.conn=null;
         if(G&&!G.round){G.guest=false;G.name1="";onState()}
-        else setStatus(`${esc(names()[1])} หลุดการเชื่อมต่อ`,"รอให้เพื่อนเปิดลิงก์เดิมแล้วกด เข้าห้อง อีกครั้ง","var(--red)");
+        else setStatus(`${esc(names()[1])} หลุดการเชื่อมต่อ`,"ให้เพื่อนเปิดลิงก์เดิมแล้วกด เข้าห้อง อีกครั้ง","var(--red)");
       });
       hostBroadcast();
     });
   });
   peer.on("disconnected",()=>{if(NET.peer===peer)try{peer.reconnect()}catch{}});
-  peer.on("error",e=>{
-    if(opened)return;
-    setBusy(false);try{peer.destroy()}catch{}
-    if(e.type==="unavailable-id")showErr(resume?"ห้อง "+code+" ยังเปิดอยู่ที่อื่น รอสักครู่แล้วลองใหม่":"รหัสซ้ำ ลองกดสร้างห้องอีกครั้ง");
+  peer.on("error",e=>{if(!opened){try{peer.destroy()}catch{}onFail&&onFail(e)}});
+  return peer;
+}
+
+function createRoom(resume){
+  if(typeof Peer!=="function")return;
+  leaveRoom();showErr("");setBusy(true);
+  const code=resume?resume.code:genCode();
+  hostPeer(code,()=>{
+    setBusy(false);
+    const hold=+document.querySelector('input[name="hold"]:checked').value;
+    G=resume&&resume.G?{...resume.G,guest:false}:{name0:myName(),name1:"",guest:false,hold,round:0,board:[],community:[],picked:{},turn:0,results:{}};
+    enterRoom(code,0);
+    const relay=relayConn(code,"h");NET.relay=relay;
+    relay.on("data",d=>hostData(d,relay));
+    hostBroadcast();onState();
+  },e=>{
+    setBusy(false);
+    if(e.type==="unavailable-id")showErr(resume?"ห้อง "+code+" ยังค้างอยู่ รอ 30 วินาทีแล้วลองใหม่":"รหัสซ้ำ ลองกดสร้างห้องอีกครั้ง");
     else showErr("เชื่อมต่อไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
   });
 }
 
+/* the host's phone may drop its connection while the browser is in the background */
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState!=="visible"||MODE!=="online"||NET.seat!==0||!NET.code)return;
+  const p=NET.peer;
+  if(p&&p.disconnected&&!p.destroyed){try{p.reconnect()}catch{}}
+  else if(!p||p.destroyed){const code=NET.code;NET.peer=null;hostPeer(code,null,()=>setTimeout(()=>{if(MODE==="online"&&!NET.peer)hostPeer(code)},5000))}
+  if(NET.relay&&!NET.relay.open){}
+});
+
 function joinRoom(code){
   code=(code||"").trim().toUpperCase();
   if(!/^[A-Z0-9]{4}$/.test(code)){showErr("ใส่รหัสห้อง 4 ตัว");return}
-  if(typeof Peer!=="function")return;
   leaveRoom();showErr("");setBusy(true);
-  const peer=new Peer();
-  let joined=false;
-  const fail=msg=>{if(joined)return;clearTimeout(t);setBusy(false);showErr(msg);try{peer.destroy()}catch{}};
-  const t=setTimeout(()=>fail("ไม่พบห้อง "+code+" (เจ้าของห้องต้องเปิดหน้าเกมค้างไว้)"),12000);
+  let joined=false,relayStarted=false,peer=null;
+  const onState_=conn=>d=>{if(d&&d.type==="state"&&NET.conn===conn){G=d.G;onState()}};
+  const enter=conn=>{
+    joined=true;clearTimeout(tPeer);setBusy(false);
+    NET.conn=conn;
+    enterRoom(code,1);
+    setStatus("กำลังเข้าห้อง "+code+"…");setActions([["ออกจากห้อง",openSetup,true]]);
+    conn.send({type:"hello",name:myName()});
+  };
+  const fail=msg=>{if(joined)return;clearTimeout(tPeer);clearTimeout(tRelay);setBusy(false);showErr(msg);leaveRoom()};
+  let tRelay=null;
+  const startRelay=()=>{
+    if(relayStarted||joined)return;relayStarted=true;
+    if(peer){try{peer.destroy()}catch{}NET.peer=null}
+    const relay=relayConn(code,"g");NET.relay=relay;
+    let gotState=false;
+    relay.on("data",d=>{if(d&&d.type==="state"){if(!gotState){gotState=true;clearTimeout(tRelay);if(!joined){joined=true;setBusy(false);NET.conn=relay;enterRoom(code,1);setActions([["ออกจากห้อง",openSetup,true]])}}onState_(relay)(d)}});
+    relay.on("open",()=>relay.send({type:"hello",name:myName()}));
+    tRelay=setTimeout(()=>fail("ไม่พบห้อง "+code+" · ให้เจ้าของห้องกลับไปเปิดหน้าเกมค้างไว้ แล้วลองใหม่"),15000);
+  };
+  const tPeer=setTimeout(startRelay,7000);
+  if(typeof Peer!=="function"){startRelay();return}
+  peer=new Peer();NET.peer=peer;
   peer.on("open",()=>{
     const conn=peer.connect(PREFIX+code,{reliable:true});
-    conn.on("open",()=>{
-      joined=true;clearTimeout(t);setBusy(false);
-      NET.peer=peer;NET.conn=conn;
-      enterRoom(code,1);
-      setStatus("กำลังเข้าห้อง "+code+"…");setActions([["ออกจากห้อง",openSetup,true]]);
-      conn.send({type:"hello",name:myName()});
-    });
-    conn.on("data",d=>{if(d&&d.type==="state"&&NET.conn===conn){G=d.G;onState()}});
+    conn.on("open",()=>{if(!relayStarted)enter(conn)});
+    conn.on("data",d=>onState_(conn)(d));
     conn.on("close",()=>{if(NET.conn===conn){NET.conn=null;setStatus("หลุดจากห้อง","เจ้าของห้องปิดหน้าเกมหรือเน็ตหลุด กด ออกจากห้อง แล้วเข้าใหม่ด้วยรหัสเดิม","var(--red)")}});
   });
-  peer.on("error",e=>{
-    if(e.type==="peer-unavailable")fail("ไม่พบห้อง "+code+" (เจ้าของห้องต้องเปิดหน้าเกมค้างไว้)");
-    else if(!joined)fail("เชื่อมต่อไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่");
-  });
+  peer.on("error",()=>startRelay());
 }
 
 function lastRoom(){try{return JSON.parse(store.get("mh-last")||"null")}catch{return null}}
